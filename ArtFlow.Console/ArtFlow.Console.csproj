@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <ProjectReference Include="..\ArtFlow.Core\ArtFlow.Core.csproj" />
+    <ProjectReference Include="..\ArtFlow.Solver\ArtFlow.Solver.csproj" />
+    <ProjectReference Include="..\ArtFlow.IO\ArtFlow.IO.csproj" />
+  </ItemGroup>
+</Project>
