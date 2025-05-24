@@ -51,11 +51,6 @@ public class ConfigLoader
                     K3 = segConfig.Material.K3
                 };
             }
-                    K1 = segConfig.Material.K1,
-                    K2 = segConfig.Material.K2,
-                    K3 = segConfig.Material.K3
-                };
-            }
             
             solver.AddSegment(segment);
         }

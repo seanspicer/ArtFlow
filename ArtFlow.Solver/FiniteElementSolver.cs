@@ -17,9 +17,9 @@ public class FiniteElementSolver
     
     // Global system
     private int _totalDofs;
-    private Matrix<double> _globalMatrix;
-    private Vector<double> _globalResidual;
-    private Vector<double> _solution;
+    private Matrix<double> _globalMatrix = null!;
+    private Vector<double> _globalResidual = null!;
+    private Vector<double> _solution = null!;
     
     public FiniteElementSolver(SolverSettings settings)
     {
@@ -168,6 +168,23 @@ public class FiniteElementSolver
             }
         }
     }
+
+    /// <summary>
+    /// Assemble the global system matrix and residual vector
+    /// </summary>
+    private void AssembleGlobalSystem(double currentTime, double dt)
+    {
+        // Clear global system
+        _globalMatrix.Clear();
+        _globalResidual.Clear();
+        
+        // Assemble element contributions
+        foreach (var segment in _segments)
+        {
+            foreach (var element in segment.Elements)
+            {
+                var (Ke, Re) = AssembleElementSystem(element, segment, currentTime, dt);
+                AddElementContribution(element, Ke, Re);
             }
         }
         
@@ -176,6 +193,30 @@ public class FiniteElementSolver
         {
             ApplyBranchConstraints(branch);
         }
+    }
+
+    /// <summary>
+    /// Assemble element system matrix and residual
+    /// </summary>
+    private (Matrix<double> Ke, Vector<double> Re) AssembleElementSystem(Element element, ArterialSegment segment, double currentTime, double dt)
+    {
+        // This is a placeholder for the finite element assembly
+        // In a complete implementation, this would:
+        // 1. Calculate element matrices for the space-time formulation
+        // 2. Include convection, pressure, and temporal terms
+        // 3. Handle the discontinuous Galerkin time formulation
+        
+        var Ke = Matrix<double>.Build.Dense(4, 4);
+        var Re = Vector<double>.Build.Dense(4);
+        
+        // TODO: Implement proper finite element assembly
+        // For now, return identity matrix to avoid singular system
+        for (int i = 0; i < 4; i++)
+        {
+            Ke[i, i] = 1.0;
+        }
+        
+        return (Ke, Re);
     }
     
     private void AddElementContribution(Element element, Matrix<double> Ke, Vector<double> Re)
@@ -243,13 +284,16 @@ public class FiniteElementSolver
             switch (bc.Type)
             {
                 case BoundaryConditionType.FlowRate:
-                    ApplyFlowRateBC(nodeGlobalIndex, bc as FlowRateBoundaryCondition, time);
+                    if (bc is FlowRateBoundaryCondition flowRateBC)
+                        ApplyFlowRateBC(nodeGlobalIndex, flowRateBC, time);
                     break;
                 case BoundaryConditionType.Pressure:
-                    ApplyPressureBC(nodeGlobalIndex, bc as PressureBoundaryCondition, time);
+                    if (bc is PressureBoundaryCondition pressureBC)
+                        ApplyPressureBC(nodeGlobalIndex, pressureBC, time);
                     break;
                 case BoundaryConditionType.Resistance:
-                    ApplyResistanceBC(nodeGlobalIndex, bc as ResistanceBoundaryCondition, time);
+                    if (bc is ResistanceBoundaryCondition resistanceBC)
+                        ApplyResistanceBC(nodeGlobalIndex, resistanceBC, time);
                     break;
             }
         }
