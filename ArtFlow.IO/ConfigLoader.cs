@@ -45,13 +45,7 @@ public class ConfigLoader
             if (segConfig.Material != null)
             {
                 segment.Material = new Material
-                {
-                    K1 = segConfig.Material.K1,
-                    K2 = segConfig.Material.K2,
-                    K3 = segConfig.Material.K3
-                };
-            }
-                    K1 = segConfig.Material.K1,
+                {                    K1 = segConfig.Material.K1,
                     K2 = segConfig.Material.K2,
                     K3 = segConfig.Material.K3
                 };

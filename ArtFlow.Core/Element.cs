@@ -30,13 +30,13 @@ public class Element
     }
     
     /// <summary>
-    /// Get shape function derivative for node at local coordinate xi
+    /// Get shape function derivative with respect to xi
     /// </summary>
     public double ShapeFunctionDerivative(int nodeIndex, double xi)
     {
         if (nodeIndex == 0) // Node1
-            return -0.5 / (Length * 0.5);
+            return -0.5;
         else // Node2
-            return 0.5 / (Length * 0.5);
+            return 0.5;
     }
 }

@@ -1,6 +1,7 @@
 using ArtFlow.Core;
 using MathNet.Numerics.LinearAlgebra;
 using MathNet.Numerics.LinearAlgebra.Double;
+using System.Linq;
 
 namespace ArtFlow.Solver;
 
@@ -17,9 +18,9 @@ public class FiniteElementSolver
     
     // Global system
     private int _totalDofs;
-    private Matrix<double> _globalMatrix;
-    private Vector<double> _globalResidual;
-    private Vector<double> _solution;
+    private Matrix<double> _globalMatrix = Matrix<double>.Build.Dense(1, 1);
+    private Vector<double> _globalResidual = Vector<double>.Build.Dense(1);
+    private Vector<double> _solution = Vector<double>.Build.Dense(1);
     
     public FiniteElementSolver(SolverSettings settings)
     {
@@ -49,17 +50,16 @@ public class FiniteElementSolver
     /// </summary>
     public void InitializeMesh()
     {
+        int globalNodeId = 0;
         foreach (var segment in _segments)
         {
-            int numElements = (int)(segment.Length / _settings.ElementSize);
-            if (numElements < 1) numElements = 1;
-            
+            int numElements = Math.Max(1, (int)(segment.Length / _settings.ElementSize));
             double dz = segment.Length / numElements;
             
             // Create nodes
             for (int i = 0; i <= numElements; i++)
             {
-                var node = new Node(segment.Nodes.Count, i * dz)
+                var node = new Node(globalNodeId++, i * dz)
                 {
                     Area = segment.InitialArea,
                     FlowRate = 0.0,
@@ -100,6 +100,8 @@ public class FiniteElementSolver
     /// </summary>
     public void SolveTimeStep(double currentTime, double dt)
     {
+        if (_totalDofs == 0) return;
+        
         _globalMatrix = Matrix<double>.Build.Sparse(_totalDofs, _totalDofs);
         _globalResidual = Vector<double>.Build.Dense(_totalDofs);
         _solution = Vector<double>.Build.Dense(_totalDofs);
@@ -130,7 +132,7 @@ public class FiniteElementSolver
         // Update previous time step values
         UpdatePreviousValues();
     }
-
+    
     private void InitializeSolutionVector()
     {
         int dofIndex = 0;
@@ -143,7 +145,7 @@ public class FiniteElementSolver
             }
         }
     }
-    
+
     private void UpdateNodalValues()
     {
         int dofIndex = 0;
@@ -168,6 +170,23 @@ public class FiniteElementSolver
             }
         }
     }
+    
+    private void AssembleGlobalSystem(double currentTime, double dt)
+    {
+        _globalMatrix.Clear();
+        _globalResidual.Clear();
+        
+        // Assemble element contributions
+        foreach (var segment in _segments)
+        {
+            var assembler = new ElementAssembler(segment, _settings);
+            
+            foreach (var element in segment.Elements)
+            {
+                var (Ke, Re) = assembler.ComputeElementMatrixAndResidual(element, dt);
+                
+                // Add to global system
+                AddElementContribution(element, Ke, Re);
             }
         }
         
@@ -177,7 +196,7 @@ public class FiniteElementSolver
             ApplyBranchConstraints(branch);
         }
     }
-    
+
     private void AddElementContribution(Element element, Matrix<double> Ke, Vector<double> Re)
     {
         // Map local DOFs to global DOFs
@@ -197,7 +216,6 @@ public class FiniteElementSolver
     private int[] GetGlobalDofs(Element element)
     {
         // Each node has 2 DOFs (S and Q)
-        // Find global node indices
         int node1GlobalIndex = GetGlobalNodeIndex(element.Node1);
         int node2GlobalIndex = GetGlobalNodeIndex(element.Node2);
         
@@ -222,17 +240,14 @@ public class FiniteElementSolver
         }
         return -1;
     }
-
+    
     private void ApplyBranchConstraints(BranchPoint branch)
     {
-        // Implementation of Lagrange multiplier constraints for branch points
-        // This enforces pressure continuity and mass conservation
-        
         // TODO: Implement branch constraint assembly
         // This involves modifying the global matrix and residual
         // to include Lagrange multiplier terms
     }
-    
+
     private void ApplyBoundaryConditions(double time)
     {
         foreach (var bc in _boundaryConditions)
@@ -269,9 +284,11 @@ public class FiniteElementSolver
         }
         return -1;
     }
-
-    private void ApplyFlowRateBC(int nodeIndex, FlowRateBoundaryCondition bc, double time)
+    
+    private void ApplyFlowRateBC(int nodeIndex, FlowRateBoundaryCondition? bc, double time)
     {
+        if (bc == null) return;
+        
         int qDof = nodeIndex * 2 + 1; // Q DOF
         
         // Clear row and column
@@ -288,9 +305,11 @@ public class FiniteElementSolver
         double prescribedQ = bc.FlowRateFunction(time);
         _globalResidual[qDof] = _solution[qDof] - prescribedQ;
     }
-    
-    private void ApplyPressureBC(int nodeIndex, PressureBoundaryCondition bc, double time)
+
+    private void ApplyPressureBC(int nodeIndex, PressureBoundaryCondition? bc, double time)
     {
+        if (bc == null) return;
+        
         // Convert pressure to area BC
         int sDof = nodeIndex * 2; // S DOF
         
@@ -322,16 +341,50 @@ public class FiniteElementSolver
         _globalMatrix[sDof, sDof] = 1;
         _globalResidual[sDof] = _solution[sDof] - targetArea;
     }
-
-    private void ApplyResistanceBC(int nodeIndex, ResistanceBoundaryCondition bc, double time)
+    
+    private void ApplyResistanceBC(int nodeIndex, ResistanceBoundaryCondition? bc, double time)
     {
+        if (bc == null) return;
+        
         // Resistance BC: p - QR = 0
         // This modifies both S and Q equations
+        // For now, implementing a simplified version
         
-        // TODO: Implement resistance BC following the paper's approach
-        // This involves modifying the Jacobian matrix appropriately
+        int sDof = nodeIndex * 2;
+        int qDof = nodeIndex * 2 + 1;
+        
+        // Get current node values
+        double S = _solution[sDof];
+        double Q = _solution[qDof];
+        
+        // Find segment
+        ArterialSegment? segment = null;
+        foreach (var seg in _segments)
+        {
+            if (seg.Nodes.Any(n => GetGlobalNodeIndex(n) == nodeIndex))
+            {
+                segment = seg;
+                break;
+            }
+        }
+        
+        if (segment == null) return;
+        
+        // Calculate pressure
+        double p = segment.CalculatePressure(S, 0);
+        
+        // Apply resistance constraint to Q equation
+        for (int i = 0; i < _totalDofs; i++)
+        {
+            _globalMatrix[qDof, i] = 0;
+            _globalMatrix[i, qDof] = 0;
+        }
+        _globalMatrix[qDof, qDof] = 1;
+        _globalMatrix[qDof, sDof] = -segment.CalculateDPressureDArea(S, 0) / bc.Resistance;
+        
+        _globalResidual[qDof] = Q - p / bc.Resistance;
     }
-    
+
     private double CalculateAreaFromPressure(ArterialSegment segment, double pressure, double z)
     {
         // Inverse of Olufsen's constitutive equation
@@ -344,6 +397,8 @@ public class FiniteElementSolver
         double p0 = segment.InitialPressure;
         
         double term = 1.0 - (pressure - p0) / ((4.0 / 3.0) * Eh_r0);
+        if (term <= 0) term = 0.01; // Prevent negative area
+        
         return S0 / (term * term);
     }
     
@@ -376,7 +431,17 @@ public class FiniteElementSolver
     
     private void OutputResults(double time, int timeStep)
     {
-        // TODO: Implement result output
         Console.WriteLine($"Time step {timeStep}, t = {time:F4}");
+        
+        // Output some sample results
+        foreach (var segment in _segments)
+        {
+            var node = segment.Nodes.FirstOrDefault();
+            if (node != null)
+            {
+                double p = segment.CalculatePressure(node.Area, node.Position);
+                Console.WriteLine($"  {segment.Name}: Q = {node.FlowRate:F2} cc/s, P = {p:F2} mmHg");
+            }
+        }
     }
 }

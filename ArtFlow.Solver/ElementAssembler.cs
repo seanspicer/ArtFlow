@@ -53,35 +53,55 @@ public class ElementAssembler
             double Sn = N1 * Un[0] + N2 * Un[2];
             double Qn = N1 * Un[1] + N2 * Un[3];
             
-            // Calculate matrices A, K, G
+            // Calculate derivatives
+            double dSdz = dN1dz * U[0] + dN2dz * U[2];
+            double dQdz = dN1dz * U[1] + dN2dz * U[3];
+            
+            // Calculate matrices A, K, G at this point
             var (A, K, G) = CalculateMatrices(S, Q);
             
-            // Shape function arrays
-            var N = Vector<double>.Build.DenseOfArray(new[] { N1, 0, N2, 0, 0, N1, 0, N2 });
-            var B = Vector<double>.Build.DenseOfArray(new[] { dN1dz, 0, dN2dz, 0, 0, dN1dz, 0, dN2dz });
-            
-            // Time term: (U - Un) / dt
-            var timeTerm = (U - Un) / dt;
-            
-            // Advection term: A * dU/dz
-            var dUdz = Vector<double>.Build.DenseOfArray(new[] {
-                dN1dz * U[0] + dN2dz * U[2],
-                dN1dz * U[1] + dN2dz * U[3]
-            });
-            var advectionTerm = A * dUdz;
-            
-            // Diffusion term: K * d²U/dz²
-            // For linear elements, second derivative is zero
-            
-            // Source term G
-            
-            // Assemble element contributions
+            // Weight times Jacobian
             double wJ = w[g] * J;
             
-            // Add contributions to element matrix and residual
-            AddElementContributions(Ke, Re, N, B, A, K, timeTerm, advectionTerm, G, wJ, dt);
+            // Assemble element contributions
+            // Time derivative term: (U - Un)/dt
+            for (int i = 0; i < 2; i++) // Loop over test functions
+            {
+                double Ni = (i == 0) ? N1 : N2;
+                double dNidz = (i == 0) ? dN1dz : dN2dz;
+                
+                // Continuity equation (S equation)
+                Re[i * 2] += Ni * ((S - Sn) / dt) * wJ;
+                Re[i * 2] += Ni * dQdz * wJ;
+                Re[i * 2] -= Ni * G[0] * wJ;
+                
+                // Momentum equation (Q equation)
+                Re[i * 2 + 1] += Ni * ((Q - Qn) / dt) * wJ;
+                Re[i * 2 + 1] += Ni * (A[1, 0] * dSdz + A[1, 1] * dQdz) * wJ;
+                Re[i * 2 + 1] += dNidz * K[1, 1] * dQdz * wJ;
+                Re[i * 2 + 1] -= Ni * G[1] * wJ;
+                
+                // Jacobian matrix contributions
+                for (int j = 0; j < 2; j++)
+                {
+                    double Nj = (j == 0) ? N1 : N2;
+                    double dNjdz = (j == 0) ? dN1dz : dN2dz;
+                    
+                    // Mass matrix term
+                    Ke[i * 2, j * 2] += Ni * Nj / dt * wJ;
+                    Ke[i * 2 + 1, j * 2 + 1] += Ni * Nj / dt * wJ;
+                    
+                    // Advection terms
+                    Ke[i * 2, j * 2 + 1] += Ni * dNjdz * wJ;
+                    Ke[i * 2 + 1, j * 2] += Ni * A[1, 0] * dNjdz * wJ;
+                    Ke[i * 2 + 1, j * 2 + 1] += Ni * A[1, 1] * dNjdz * wJ;
+                    
+                    // Diffusion term
+                    Ke[i * 2 + 1, j * 2 + 1] += dNidz * K[1, 1] * dNjdz * wJ;
+                }
+            }
         }
-        
+
         // Add stabilization if enabled
         if (_settings.UseStabilization)
         {
@@ -90,7 +110,7 @@ public class ElementAssembler
         
         return (Ke, Re);
     }
-
+    
     private (Matrix<double>, Matrix<double>, Vector<double>) CalculateMatrices(double S, double Q)
     {
         // Matrix A (quasi-linear form)
@@ -119,7 +139,7 @@ public class ElementAssembler
         
         return (A, K, G);
     }
-    
+
     private Vector<double> GetNodalValues(Element element)
     {
         return Vector<double>.Build.DenseOfArray(new[] {
@@ -139,42 +159,14 @@ public class ElementAssembler
             element.Node2.FlowRatePrev
         });
     }
-
-    private void AddElementContributions(Matrix<double> Ke, Vector<double> Re, 
-        Vector<double> N, Vector<double> B, Matrix<double> A, Matrix<double> K, 
-        Vector<double> timeTerm, Vector<double> advectionTerm, Vector<double> G, 
-        double wJ, double dt)
-    {
-        // Implementation of element matrix assembly
-        // This is simplified - full implementation would include all terms
-        
-        // Time term contribution
-        for (int i = 0; i < 4; i += 2)
-        {
-            for (int j = 0; j < 4; j += 2)
-            {
-                Ke[i, j] += N[i] * N[j] / dt * wJ;
-                Ke[i+1, j+1] += N[i+1] * N[j+1] / dt * wJ;
-            }
-        }
-        
-        // Advection term contribution
-        // TODO: Complete implementation
-        
-        // Add to residual
-        for (int i = 0; i < 4; i++)
-        {
-            Re[i] += N[i] * timeTerm[i/2] * wJ;
-        }
-    }
     
     private void AddStabilization(Element element, Matrix<double> Ke, Vector<double> Re, Vector<double> U, double dt)
     {
-        // SUPG stabilization
-        // tau = stabilization parameter
+        // SUPG stabilization - simplified implementation
         double h = element.Length;
         double tau = _settings.StabilizationParameter * h * h / dt;
         
-        // TODO: Implement stabilization terms following the paper
+        // TODO: Implement full stabilization terms following the paper
+        // This is a placeholder implementation
     }
 }
